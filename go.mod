@@ -7,6 +7,7 @@ require (
 	github.com/go-webauthn/webauthn v0.10.0
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/golang-migrate/migrate/v4 v4.17.0
+	github.com/gorilla/csrf v1.7.2
 )
 
 require (
@@ -14,6 +15,7 @@ require (
 	github.com/go-webauthn/x v0.1.6 // indirect
 	github.com/google/go-tpm v0.9.0 // indirect
 	github.com/google/uuid v1.5.0 // indirect
+	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect

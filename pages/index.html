@@ -1,11 +1,183 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-  </head>
-  <body>
-    test
-  </body>
-</html>
+{{- define "head" }}
+<title>WebAuthn Minimal Example</title>
+<!-- This base64 script is important for encoding correctly. -->
+<script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.6/base64.min.js"></script>
+
+<script>
+  async function register(name) {
+    if (!window.PublicKeyCredential) {
+      alert('Error: this browser does not support WebAuthn.');
+      return;
+    }
+
+    let resp = await fetch(`/register/begin?name=${name}`);
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    const options = await resp.json();
+
+    // go-webauthn returns base64 encoded values.
+    options.publicKey.challenge = Base64.toUint8Array(
+      options.publicKey.challenge
+    );
+    options.publicKey.user.id = Base64.toUint8Array(options.publicKey.user.id);
+    if (options.publicKey.excludeCredentials) {
+      options.publicKey.excludeCredentials.forEach(function (listItem) {
+        listItem.id = Base64.toUint8Array(listItem.id);
+      });
+    }
+
+    const credential = await navigator.credentials.create(options);
+
+    resp = await fetch(`/register/finish?name=${name}`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': '{{ .CSRFToken }}',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: credential.id,
+        rawId: Base64.fromUint8Array(new Uint8Array(credential.rawId), true),
+        type: credential.type,
+        response: {
+          attestationObject: Base64.fromUint8Array(
+            new Uint8Array(credential.response.attestationObject),
+            true
+          ),
+          clientDataJSON: Base64.fromUint8Array(
+            new Uint8Array(credential.response.clientDataJSON),
+            true
+          ),
+        },
+      }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    window.location.href = '/protected';
+  }
+
+  // Login executes the WebAuthn flow.
+  async function login(name) {
+    if (!window.PublicKeyCredential) {
+      alert('Error: this browser does not support WebAuthn');
+      return;
+    }
+
+    let resp = await fetch(`/login/begin?name=${name}`);
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    const options = await resp.json();
+
+    options.publicKey.challenge = Base64.toUint8Array(
+      options.publicKey.challenge
+    );
+    options.publicKey.allowCredentials.forEach(function (listItem) {
+      listItem.id = Base64.toUint8Array(listItem.id);
+    });
+
+    const assertion = await navigator.credentials.get(options);
+
+    resp = await fetch(`/login/finish?name=${name}`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': '{{ .CSRFToken }}',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: assertion.id,
+        rawId: Base64.fromUint8Array(new Uint8Array(assertion.rawId), true),
+        type: assertion.type,
+        response: {
+          authenticatorData: Base64.fromUint8Array(
+            new Uint8Array(assertion.response.authenticatorData),
+            true
+          ),
+          clientDataJSON: Base64.fromUint8Array(
+            new Uint8Array(assertion.response.clientDataJSON),
+            true
+          ),
+          signature: Base64.fromUint8Array(
+            new Uint8Array(assertion.response.signature),
+            true
+          ),
+          userHandle: Base64.fromUint8Array(
+            new Uint8Array(assertion.response.userHandle),
+            true
+          ),
+        },
+      }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    window.location.href = '/protected';
+  }
+
+  // Halt form event
+  window.addEventListener('DOMContentLoaded', (e) => {
+    document
+      .getElementById('webauthn-register')
+      .addEventListener('click', async () => {
+        try {
+          await register(document.getElementById('name').value);
+        } catch (err) {
+          alert(err);
+        }
+      });
+
+    document
+      .getElementById('webauthn-sign-in')
+      .addEventListener('click', async () => {
+        try {
+          await login(document.getElementById('name').value);
+        } catch (err) {
+          alert(err);
+        }
+      });
+  });
+</script>
+{{- end }}
+
+{{- define "body" }}
+<header>
+  <h1>WebAuthn Minimal Example</h1>
+  <nav>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/protected">Protected</a></li>
+    </ul>
+  </nav>
+</header>
+<main>
+  <article>
+    <header>WebAuthn</header>
+    <main>
+      <form onsubmit="event.preventDefault();">
+        <fieldset>
+          <label>
+            User name
+            <input
+              type="text"
+              id="name"
+              autocomplete="username webauthn"
+              placeholder="User name"
+            />
+          </label>
+        </fieldset>
+        <button id="webauthn-register">Register with Security Key</button>
+        <button id="webauthn-sign-in">Sign In with Security Key</button>
+      </form>
+    </main>
+  </article>
+</main>
+{{- end }}

@@ -2,6 +2,10 @@
 bin/webauthn: $(GO_SRCS)
 	go build -trimpath -ldflags "-s -w" -o "$@" ./main.go
 
+.PHONY: run
+run:
+	go run ./main.go --jwt.secret="example" --http.addr=":3001" --public.url="http://localhost:3001" --csrf.secret="secret"
+
 migrate := $(shell which migrate)
 ifeq ($(migrate),)
 migrate := $(shell go env GOPATH)/bin/migrate
@@ -33,6 +37,18 @@ sql: $(sqlc)
 
 $(sqlc):
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc
+
+wgo :=  $(shell which wgo)
+ifeq ($(wgo),)
+wgo := $(shell go env GOPATH)/bin/wgo
+endif
+
+.PHONY: watch
+watch: $(wgo)
+	$(wgo) -xdir "bin/" sh -c 'make run || exit 1' --signal SIGTERM
+
+$(wgo):
+	go install github.com/bokwoon95/wgo@latest
 
 .PHONY: clean
 clean:

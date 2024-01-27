@@ -9,25 +9,30 @@ import (
 	internalwebauthn "example-project/webauthn"
 	"example-project/webauthn/session"
 	"flag"
-	"io/fs"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
+	"text/template"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/gorilla/csrf"
 )
 
 var (
-	//go:embed pages/*
+	//go:embed pages/* base.html
 	pages embed.FS
 )
 
 var (
-	jwtSecretFlag = flag.String("jwt.secret", "", "JWT secret used for signing")
-	httpAddrFlag  = flag.String("http.addr", ":3000", "HTTP server address")
-	publicURLFlag = flag.String(
+	jwtSecretFlag  = flag.String("jwt.secret", "", "JWT secret used for signing")
+	csrfSecretFlag = flag.String("csrf.secret", "", "CSRF secret used for signing")
+	httpAddrFlag   = flag.String("http.addr", ":3000", "HTTP server address")
+	publicURLFlag  = flag.String(
 		"public.url",
 		"http://localhost:3000",
 		"Public URL of the HTTP server",
@@ -99,15 +104,46 @@ func main() {
 	})
 	r.Post("/delete-device", webauthnS.DeleteDevice())
 
-	pages, err := fs.Sub(pages, "pages")
-	if err != nil {
-		panic(err)
+	renderFn := func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Clean(r.URL.Path)
+		if path == "/" || path == "." {
+			path = "index"
+		}
+		path = strings.TrimSuffix(strings.TrimPrefix(path, "/"), "/")
+		path = fmt.Sprintf("pages/%s.html", path)
+
+		t, err := template.ParseFS(pages, "base.html", path)
+		if err != nil {
+			if strings.Contains(err.Error(), "no files") {
+				http.Error(w, "not found", http.StatusNotFound)
+			} else {
+				slog.Error("template error", slog.String("err", err.Error()))
+				panic(err)
+			}
+			return
+		}
+
+		claims, _ := jwt.GetClaimsFromRequest(r)
+		if err := t.ExecuteTemplate(w, "base", struct {
+			CSRFToken string
+			UserName  string
+		}{
+			CSRFToken: csrf.Token(r),
+			UserName:  claims.Subject,
+		}); err != nil {
+			slog.Error("template error", slog.String("err", err.Error()))
+			panic(err)
+		}
 	}
-	r.With(jwt.Deny).Handle("/protected.html", http.FileServer(http.FS(pages)))
-	r.Handle("/*", http.FileServer(http.FS(pages)))
+
+	r.Route("/protected", func(r chi.Router) {
+		r.Use(jwt.Deny)
+		r.Get("/", renderFn)
+	})
+	r.Get("/*", renderFn)
 
 	slog.Info("http server started", slog.String("addr", *httpAddrFlag))
-	if err := http.ListenAndServe(*httpAddrFlag, r); err != nil {
+	if err := http.ListenAndServe(*httpAddrFlag, csrf.Protect([]byte(*csrfSecretFlag))(r)); err != nil {
 		slog.Error("http server failed", slog.String("err", err.Error()))
 		os.Exit(1)
 	}
