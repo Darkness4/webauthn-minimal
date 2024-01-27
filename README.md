@@ -20,6 +20,8 @@ Quick run:
 make run
 ```
 
+Help:
+
 ```shell
 Usage of ./bin/webauthn:
   -db.path string
