@@ -1,12 +1,171 @@
 {{- define "head" }}
 <title>Protected</title>
-{{- end }}
 
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/flexboxgrid/6.3.1/flexboxgrid.min.css"
+  integrity="sha512-YHuwZabI2zi0k7c9vtg8dK/63QB0hLvD4thw44dFo/TfBFVVQOqEG9WpviaEpbyvgOIYLXF1n7xDUfU3GDs0sw=="
+  crossorigin="anonymous"
+/>
+<!-- This base64 script is important for encoding correctly. -->
+<script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.6/base64.min.js"></script>
+
+<script>
+  async function addSecurityKey() {
+    if (!window.PublicKeyCredential) {
+      alert('Error: this browser does not support WebAuthn.');
+      return;
+    }
+
+    let resp = await fetch(`/add-device/begin`);
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    const options = await resp.json();
+
+    // go-webauthn returns base64 encoded values.
+    options.publicKey.challenge = Base64.toUint8Array(
+      options.publicKey.challenge
+    );
+    options.publicKey.user.id = Base64.toUint8Array(options.publicKey.user.id);
+    if (options.publicKey.excludeCredentials) {
+      options.publicKey.excludeCredentials.forEach(function (listItem) {
+        listItem.id = Base64.toUint8Array(listItem.id);
+      });
+    }
+
+    const credential = await navigator.credentials.create(options);
+
+    resp = await fetch(`/add-device/finish`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': '{{ .CSRFToken }}',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        // go-webauthn only accepts base64 encoded values.
+        // We cannot pass credential because it's a class, not an object.
+        id: credential.id,
+        rawId: Base64.fromUint8Array(new Uint8Array(credential.rawId), true),
+        type: credential.type,
+        response: {
+          attestationObject: Base64.fromUint8Array(
+            new Uint8Array(credential.response.attestationObject),
+            true
+          ),
+          clientDataJSON: Base64.fromUint8Array(
+            new Uint8Array(credential.response.clientDataJSON),
+            true
+          ),
+        },
+      }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    window.location.reload();
+  }
+
+  async function logOut() {
+    const resp = await fetch(`/logout`);
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    window.location.href = '/';
+  }
+
+  async function deleteDevice(credentialID) {
+    const resp = await fetch(`/delete-device?credential=${credentialID}`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': '{{ .CSRFToken }}',
+      },
+    });
+
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+
+    window.location.reload();
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    document
+      .getElementById('webauthn-add-security-key')
+      .addEventListener('click', async () => {
+        try {
+          await addSecurityKey();
+        } catch (e) {
+          alert(e);
+        }
+      });
+
+    document
+      .getElementById('webauthn-logout')
+      .addEventListener('click', async () => {
+        try {
+          await logOut();
+        } catch (e) {
+          alert(e);
+        }
+      });
+
+    document
+      .getElementById('credentials')
+      .addEventListener('click', async (e) => {
+        if (e.target.nodeName === 'BUTTON') {
+          try {
+            await deleteDevice(e.target.dataset.id);
+          } catch (e) {
+            alert(e);
+          }
+        }
+      });
+  });
+</script>
+{{- end }}
+<!---->
 {{- define "body" }}
 <header><h1>This is protected.</h1></header>
 <main>
   <article>
-    <h2>Hello {{ .UserName }}!</h2>
+    <main>
+      <h2>Hello {{ .UserName }}!</h2>
+    </main>
+
+    <footer>
+      <button id="webauthn-add-security-key">
+        Add Additional Security Key
+      </button>
+      <button id="webauthn-logout">Log out</button>
+    </footer>
   </article>
 </main>
+
+<footer>
+  <h4>Security Keys</h4>
+
+  <div class="row" id="credentials">
+    {{- range $credentialID := .Credentials }}
+    <div class="col-xs-12 col-lg-4">
+      <article class="box">
+        <main>
+          <h6>{{ $credentialID }}</h6>
+        </main>
+
+        <footer>
+          <button class="secondary" data-id="{{ $credentialID }}">
+            Delete
+          </button>
+        </footer>
+      </article>
+    </div>
+    {{- end }}
+  </div>
+</footer>
 {{- end }}

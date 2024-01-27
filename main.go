@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"example-project/database"
 	"example-project/database/user"
 	"example-project/jwt"
@@ -124,12 +125,18 @@ func main() {
 		}
 
 		claims, _ := jwt.GetClaimsFromRequest(r)
+		creds := make([]string, 0, len(claims.Credentials))
+		for _, c := range claims.Credentials {
+			creds = append(creds, base64.RawURLEncoding.EncodeToString(c.ID))
+		}
 		if err := t.ExecuteTemplate(w, "base", struct {
-			CSRFToken string
-			UserName  string
+			CSRFToken   string
+			UserName    string
+			Credentials []string
 		}{
-			CSRFToken: csrf.Token(r),
-			UserName:  claims.Subject,
+			CSRFToken:   csrf.Token(r),
+			UserName:    claims.Subject,
+			Credentials: creds,
 		}); err != nil {
 			slog.Error("template error", slog.String("err", err.Error()))
 			panic(err)

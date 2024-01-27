@@ -123,8 +123,7 @@
     window.location.href = '/protected';
   }
 
-  // Halt form event
-  window.addEventListener('DOMContentLoaded', (e) => {
+  window.addEventListener('DOMContentLoaded', () => {
     document
       .getElementById('webauthn-register')
       .addEventListener('click', async () => {
